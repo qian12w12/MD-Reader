@@ -1,9 +1,7 @@
 import sys
 from pathlib import Path
-from PySide6.QtWebEngineWidgets import QWebEngineView
-
 from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QTextEdit,
+    QApplication, QMainWindow, QTextEdit, QTextBrowser,
     QSplitter, QToolBar, QFileDialog, QMessageBox, QStatusBar, QLabel,
 )
 from PySide6.QtCore import Qt, QSize
@@ -156,9 +154,16 @@ class MainWindow(QMainWindow):
         """)
 
     def _setup_preview(self):
-        self.preview = QWebEngineView()
+        self.preview = QTextBrowser()
         self.preview.setMinimumWidth(200)
-        self.preview.setStyleSheet("QWebEngineView { background: transparent; border: none; }")
+        self.preview.setStyleSheet("""
+            QTextBrowser {
+                background: #1a1a2e;
+                color: #cdd6f4;
+                border: none;
+                padding: 4px;
+            }
+        """)
 
     def _setup_splitter(self):
         self.splitter = QSplitter(Qt.Horizontal)
