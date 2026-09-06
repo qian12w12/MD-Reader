@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QTextEdit, QTextBrowser,
     QSplitter, QToolBar, QFileDialog, QMessageBox, QStatusBar, QLabel,
 )
-from PySide6.QtCore import Qt, QSize
+from PySide6.QtCore import Qt, QSize, QEvent
 from PySide6.QtGui import QKeySequence, QFontDatabase, QPalette, QColor
 
 import markdown
@@ -123,6 +123,7 @@ class MainWindow(QMainWindow):
         self.resize(1200, 750)
         self.current_file: Path | None = None
         self._modified = False
+        self.setAcceptDrops(True)
 
         self._setup_ui()
         self._connect_signals()
@@ -156,6 +157,8 @@ class MainWindow(QMainWindow):
     def _setup_preview(self):
         self.preview = QTextBrowser()
         self.preview.setMinimumWidth(200)
+        self.preview.setAcceptDrops(True)
+        self.preview.installEventFilter(self)
         self.preview.setStyleSheet("""
             QTextBrowser {
                 background: #1a1a2e;
@@ -271,6 +274,55 @@ class MainWindow(QMainWindow):
 
     # ── 信号连接 ──────────────────────────────────────────────
 
+    # ── 拖放 ──────────────────────────────────────────────────
+
+    def _dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            urls = event.mimeData().urls()
+            if any(url.toLocalFile().lower().endswith('.md') for url in urls):
+                event.acceptProposedAction()
+                return
+        event.ignore()
+
+    def _dropEvent(self, event):
+        if not event.mimeData().hasUrls():
+            event.ignore()
+            return
+        url = event.mimeData().urls()[0]
+        path = url.toLocalFile()
+        if not path.lower().endswith('.md'):
+            event.ignore()
+            return
+        self._load_dropped_file(path)
+        event.acceptProposedAction()
+
+    def _load_dropped_file(self, path: str):
+        try:
+            content = Path(path).read_text(encoding='utf-8')
+            self.editor.setPlainText(content)
+            self.current_file = Path(path).resolve()
+            self._modified = False
+            self.setWindowTitle(f"MD 阅读器 — {self.current_file.name}")
+            self._update_preview()
+            self.editor.show()
+            self._update_status()
+        except Exception as e:
+            QMessageBox.critical(self, '错误', f'无法打开文件：\n{e}')
+
+    def eventFilter(self, obj, event):
+        if obj is self.preview and event.type() in (QEvent.Type.DragEnter, QEvent.Type.Drop):
+            if event.mimeData().hasUrls():
+                urls = event.mimeData().urls()
+                if any(url.toLocalFile().lower().endswith('.md') for url in urls):
+                    if event.type() == QEvent.Type.DragEnter:
+                        event.acceptProposedAction()
+                        return True
+                    elif event.type() == QEvent.Type.Drop:
+                        self._load_dropped_file(urls[0].toLocalFile())
+                        event.acceptProposedAction()
+                        return True
+        return super().eventFilter(obj, event)
+
     def _connect_signals(self):
         self.editor.textChanged.connect(self._mark_modified)
         self.editor.textChanged.connect(self._update_preview)
@@ -379,6 +431,23 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "已保存", f"文件已保存：\n{path}")
         except Exception as e:
             QMessageBox.critical(self, "错误", f"无法保存文件：\n{e}")
+
+    def closeEvent(self, event):
+        if self._modified and self.current_file:
+            btn = QMessageBox.question(
+                self, "保存？",
+                f"{self.current_file.name} 有未保存的更改，是否保存？",
+                QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+            )
+            if btn == QMessageBox.Cancel:
+                event.ignore()
+                return
+            if btn == QMessageBox.Yes:
+                self._do_save(self.current_file)
+                if self._modified:
+                    event.ignore()
+                    return
+        event.accept()
 
 
 def main():
